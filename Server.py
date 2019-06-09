@@ -1,8 +1,16 @@
 import sys, re, os, socket, urllib, _thread, time, ast
 from datetime import datetime
+##########################################################################
 # Server code. Will handle connecting clients to one another
+##########################################################################
 
-# classes used by the server
+client_list = []
+room_list = []
+
+##########################################################################
+# Classes used by server
+##########################################################################
+
 # Class for a room consisting of a name and a list of clients
 class Room_class:
     def __init__ (self, room_name, client_list):
@@ -27,35 +35,29 @@ class Client_class:
     def add_room(self, room):
         rooms.append(room)
 
+##########################################################################
+# General functions for client/server communication
+##########################################################################
+
 # Disconnects a given client from the socket. Called when an exception occurs on listening
 # loop
 def disconnect_client(client):
+    if(client.username):
+        print(client.username, " was disconnected")
+    else:
+        print("Client:\n", client, " was disconnected")
     client_list.remove(client)
     for room in client.rooms:
         notify_exit(room, client)
     client.socket.close()
 
-
 # send a message to a client in dictionary format
 # takes in client receiving, room sent from, name of sender, and message
 def send_message(client, room, user, message_type, message):
-    # if the message isn't a general notification, we append the time to it
-    if message_type != "notify" and message_type != "error":
-        hour = datetime.now().hour
-        if hour < 10:
-            hour = "0" + str(hour)
-        minute = datetime.now().minute
-        if minute < 10:
-            minute = "0" + str(minute)
-        timestamp = "["+str(hour) +":"+ str(minute)+"] "
-    else:
-        timestamp = ""
-
     # creating the dictionary with relevant info
     package = {"type": message_type,
                "room": room,
                "user": user,
-               "time": timestamp,
                "msg": message}
 
     # try to send the message. The dictionary is changed to a string then encoded in
@@ -65,6 +67,9 @@ def send_message(client, room, user, message_type, message):
     except Exception as e:
         print(e)
 
+##########################################################################
+# Functions for notifying other room members of room changes
+##########################################################################
 # notifies room that a client is leaving, removes client from its list, and removes room
 # from client list
 def notify_exit(room, this_client):
@@ -86,11 +91,14 @@ def notify_entrance(room, this_client):
             send_message(client, room.name, "", "room_msg", message)
     print(message)
 
+##########################################################################
+# Main functions
+##########################################################################
+
 # joins a room if it exists, otherwise creates the room
 # also notifies all room members that someone has entered
 # takes in the requesting client and list of rooms to join
-def join_room(this_client, data):
-    selected_rooms = data['Rooms']
+def join_room(this_client, selected_rooms):
     # Strip duplicate entries
     selected_rooms = list(dict.fromkeys(selected_rooms))
 
@@ -113,11 +121,10 @@ def join_room(this_client, data):
         notify_entrance(new_room, this_client)
         send_message(this_client, new_room.name, "", "notify", "Successfully Created: " + new_room.name)
     for room in room_list:
-        print("Name: ", room.name, "\nClients: ", room.clients, "\n")
+        print("Room Name: ", room.name, "\nClients: ", room.clients, "\n")
 
 # takes in client and the rooms it wants to leave. If the client isn't in the room does nothing
-def leave_room(this_client, data):
-    selected_rooms = data['Rooms']
+def leave_room(this_client, selected_rooms):
     # Strip duplicate entries by mapping to a dictionary then back to a list
     selected_rooms = list(dict.fromkeys(selected_rooms))
 
@@ -131,7 +138,7 @@ def leave_room(this_client, data):
                     send_message(this_client, "", "", "notify", "Successfully Left: " + room.name)
 
 # takes in client and sends it the list of rooms on the server
-def list_rooms(this_client, data):
+def list_rooms(this_client):
     print("Listing room(s):")
     # Put all existing rooms into a string to return to user
     rooms = ""
@@ -151,8 +158,7 @@ def list_rooms(this_client, data):
             #disconnect_client(this_client)
 
 # Takes in requesting client and list of rooms and sends list of users in those rooms to client
-def list_users(this_client, data):
-    selected_rooms = data['Rooms']
+def list_users(this_client, selected_rooms):
     # Strip duplicate entries by mapping to a dictionary then back to a list
     selected_rooms = list(dict.fromkeys(selected_rooms))
 
@@ -177,9 +183,7 @@ def list_users(this_client, data):
         #this_client.socket.send((msg).encode("utf-8"))
 
 # Takes in the client, message, and list of rooms to send to and sends to all clients of rooms
-def message_room(this_client, data):
-    message = data['msg']
-    selected_rooms = data['Rooms']
+def message_room(this_client, selected_rooms, message):
     # Strip duplicate entries
     selected_rooms = list(dict.fromkeys(selected_rooms))
 
@@ -195,9 +199,7 @@ def message_room(this_client, data):
                         #disconnect_client(this_client)
 
 
-def pm_user(this_client, data):
-    message = data['msg']
-    users = data['Rooms']
+def pm_user(this_client, users, message):
     # Strip duplicate entries
     users = list(dict.fromkeys(users))
 
@@ -206,21 +208,22 @@ def pm_user(this_client, data):
         if client.username in users:
             try:
                 send_message(client, "", this_client.username, "pm", message)
+                time.sleep(.1)
             except Exception as e:
                 print(e)
                 #disconnect_client(this_client)
 
 # Registers a client with a name. If name doesn't work then we return an error and tell client to resend a name
-def register_client(this_client, data):
-    this_name = data['msg']
-
+def register_client(this_client, this_name):
     # check for if user somehow sent blank name
     if not this_name:
         send_message(this_client, "", "", "error", "Blank name")
     else:
         found = False
         for client in client_list:
+            print("Username: ", client.username)
             if client.username == this_name:
+                print("name exists")
                 found = True
                 break
         # if the name is in use, we send them a message to resend a name before connecting with them
@@ -229,6 +232,7 @@ def register_client(this_client, data):
 
         # otherwise name is changed as needed
         else:
+            print("name doesnt exist")
             this_client.username = this_name
             send_message(this_client, "", "", "notify", "Connected successfully")
             print("current clients: ")
@@ -236,14 +240,19 @@ def register_client(this_client, data):
             for client in client_list:
                 print("Username: ", client.username, "\nAddress:", client.address, "\n\n")
 
+
+##########################################################################
+# Functions for client/server listening/setup
+##########################################################################
 # client handler function. Called on new thread when client connects
 
 def new_client_connect(this_client, data):
+    # First loop will involve client registering a username
+    if not this_client.username:
+        register_client(this_client, data['msg'])
+
     while 1:
-        #if client hasn't registered yet
-        if not this_client.username:
-            register_client(this_client, data)
-        # if the first time sending a message we need to register using current data
+
         try:
             data = this_client.socket.recv(1024)
         except Exception as e:
@@ -251,46 +260,48 @@ def new_client_connect(this_client, data):
             disconnect_client(this_client)
             return
 
-        #check if the data works and also if the user has successfully sent a username
+        # check if data is valid before trying to decode it
         if data:
-            print(data)
             data = data.decode("utf-8")
             print(data)
             data = ast.literal_eval(data)
+            command = data['cmd']
 
-            if (data['cmd'] == "Register"):
-                register_client(this_client, data)
+            # check for registering first so that it won't try to run other commands
+            # if username is invalid
+            if not this_client.username:
+                if command == "Reg":
+                    print("registering in data loop")
+                    register_client(this_client, data['msg'])
 
-            elif(data['cmd'] == "Message"):
+            # message a room
+            elif(command == "Msg"):
                 print("messaging rooms")
-                message_room(this_client, data)
+                message_room(this_client, data['list'], data['msg'])
 
             # Join room if it exists, otherwise creates room
-            elif(data['cmd'] == "Join"):
-                join_room(this_client, data)
+            elif(command == "Join"):
+                join_room(this_client, data['list'])
 
             # Private message user
-            elif (data['cmd'] == "PM"):
-                pm_user(this_client, data)
+            elif (command == "PM"):
+                pm_user(this_client, data['list'], data['msg'])
 
             # Leave a room
-            elif (data['cmd'] == "Leave Room"):
-                leave_room(this_client, data)
-
-
-            elif (data['cmd'] == "Create Room"):
-                create_room(this_client, data)
+            elif (command == "Exit"):
+                leave_room(this_client, data['list'])
 
             # list rooms
-            elif (data['cmd'] == "List Rooms"):
-                list_rooms(this_client, data)
+            elif (command == "RList"):
+                list_rooms(this_client)
 
-            # list rooms in given room
-            elif (data['cmd'] == "List Users"):
-                list_users(this_client, data)
+            # list users in given room
+            elif (command == "UList"):
+                list_users(this_client, data['list'])
             print("operation finished")
-            send_message(this_client, "", "", "notify", this_client.username + " >>")
+            #send_message(this_client, "", "", "notify", this_client.username + " >>")
         else:
+            print(this_client.username, " was disconnected")
             disconnect_client(this_client)
             # print("Client ", address ," has disconnected")
             # client_list.remove(this_client)
@@ -314,18 +325,17 @@ if __name__ == '__main__':
     while 1:
         (clientSock, address) = serverSock.accept()
         print("client connected with address: " + str(address))
-        data = clientSock.recv(1024)
-        data = data.decode("utf-8")
-        data = ast.literal_eval(data)
+        try:
+            data = clientSock.recv(1024)
+            data = data.decode("utf-8")
+            data = ast.literal_eval(data)
 
-        # Add new client to list, will register in function
-        new_client = Client_class(address, "", clientSock)
-        client_list.append(new_client)
-        _thread.start_new_thread(new_client_connect, (new_client,data,))
+            # Add new client to list, will register in function
+            new_client = Client_class(address, "", clientSock)
+            client_list.append(new_client)
+            _thread.start_new_thread(new_client_connect, (new_client,data,))
+        except Exception as e:
+            if new_client and new_client in client_list:
+                disconnect_client(new_client)
+            print(e)
 
-
-
-
-
-
-exit(0)
