@@ -32,50 +32,50 @@ def private_message(clientSock):
     
 def quit_irc(clientSock):
 '''
+registered = False
 
 # Function run on separate thread to receive messages from server
 def get_messages(clientSock):
+    global registered
     while 1:
+        #print("get message")
         from_server = clientSock.recv(4096)
         from_server = from_server.decode("utf-8")
         from_server = ast.literal_eval(from_server)
 
+        if from_server["type"] != "error" and not registered:
+            registered = True
 
-        print(from_server)
+        # print(registered)
+        message = from_server["room"] + from_server['time'] + from_server["user"] + ">>"
+        message = message + from_server["msg"]
+        print(message)
 
 
 if __name__ == '__main__':
     # set up socket and get username from user
     clientSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     clientSock.connect(("localhost", 1234))
-    registered = False
-    # Loop for trying to connect to server
-    while not registered:
-        uname = input(str("Input username: "))
-        data = {'cmd' : 'Register',  'msg': uname, 'Rooms':None}
-        try:
-            #clientSock.setblocking(0)
-            clientSock.send(str(data).encode("utf-8"))
-            from_server = clientSock.recv(4096)
-            from_server = from_server.decode("utf-8")
-            from_server = ast.literal_eval(from_server)
-
-            #if everything returned as blank then username was bad
-            if all(value == "" for value in from_server.values()):
-                print("Could not connect, try new username!")
-            elif from_server['msg'] == "Connected successfully":
-                registered = True
-                break
-        except Exception as e:
-            print("Connection failed!")
-            print(e)
-            exit()
 
     # Open a new thread to wait for messages relayed by server
     _thread.start_new_thread(get_messages, (clientSock,))
 
-        # in main loop get user inputs
-    data['cmd'] = "Message"
+    # Loop for trying to register name with server, register will be tru if it worked
+    while not registered:
+        print(registered)
+        uname = input(str("Input username: "))
+        data = {'cmd' : 'Register',  'msg': uname, 'Rooms':None}
+        print(registered)
+        try:
+            #clientSock.setblocking(0)
+            clientSock.send(str(data).encode("utf-8"))
+        except Exception as e:
+            print("Connection failed!")
+            print(e)
+            exit()
+        time.sleep(0.2)
+
+    # in main loop get user inputs
     while 1:
         proceed = True
         print("Available commands:"
@@ -85,8 +85,8 @@ if __name__ == '__main__':
               "\n4)List users in Room"
               "\n5)Leave Room(s)"
               "\n6)PM User: Sends a message to a single user/usergroup"
-              "\n7)Quit")
-
+              "\n7)Quit\n")
+        time.sleep(0.5)
         cmd = input(uname +" > ")
         if cmd == "1":
             #join(clientSock, data)
