@@ -3,6 +3,7 @@ from datetime import datetime
 # Server code. Will handle connecting clients to one another
 
 # classes used by the server
+# Class for a room consisting of a name and a list of clients
 class Room_class:
     def __init__ (self, room_name, client_list):
         self.name = room_name
@@ -12,6 +13,8 @@ class Room_class:
     def remove_client(self, client_id):
         self.clients.remove(client_id)
 
+# Class for a client consisting of the address and socket returned by server.accept()
+# and a username and list of rooms added after connection
 class Client_class:
     address = ""
     username = ""
@@ -21,11 +24,11 @@ class Client_class:
         self.address = addr
         self.username = uname
         self.socket = clientSock
-
     def add_room(self, room):
         rooms.append(room)
 
-# Disconnects a given client from the socket. Used as an exception when client is gone
+# Disconnects a given client from the socket. Called when an exception occurs on listening
+# loop
 def disconnect_client(client):
     client_list.remove(client)
     for room in client.rooms:
@@ -33,9 +36,10 @@ def disconnect_client(client):
     client.socket.close()
 
 
-# send a message to a client in special format
+# send a message to a client in dictionary format
 # takes in client receiving, room sent from, name of sender, and message
 def send_message(client, room, user, message_type, message):
+    # if the message isn't a general notification, we append the time to it
     if message_type != "notify" and message_type != "error":
         hour = datetime.now().hour
         if hour < 10:
@@ -46,19 +50,23 @@ def send_message(client, room, user, message_type, message):
         timestamp = "["+str(hour) +":"+ str(minute)+"] "
     else:
         timestamp = ""
+
+    # creating the dictionary with relevant info
     package = {"type": message_type,
                "room": room,
                "user": user,
                "time": timestamp,
                "msg": message}
+
+    # try to send the message. The dictionary is changed to a string then encoded in
+    # utf-8 for sending
     try:
         client.socket.send(str(package).encode("utf-8"))
-        time.sleep(.1)
-    except exception as e:
+    except Exception as e:
         print(e)
-        #disconnect_client(client)
 
-# notifies room that a client is leaving and removes client from its list
+# notifies room that a client is leaving, removes client from its list, and removes room
+# from client list
 def notify_exit(room, this_client):
     if this_client in room.clients:
         room.clients.remove(this_client)
@@ -66,7 +74,7 @@ def notify_exit(room, this_client):
         message = this_client.username + " has left the room"
         for client in room.clients:
             send_message(client, room.name, "", "room_msg", message)
-    print(message)
+            print(message)
 
 # Adds a client to room and notifies all room members of client's entrance
 def notify_entrance(room, this_client):
@@ -96,7 +104,7 @@ def join_room(this_client, data):
                 send_message(this_client, room.name, "", "notify", "Successfully Joined: " + room.name)
             #either way remove from list so that we don't try to create it
             selected_rooms.remove(room.name)
-    send_message(this_client, "","", "fin", this_client.name + ">>")
+
 
     # Go through remaining list of rooms and create a new rooms with name and current client
     for room_name in selected_rooms:
@@ -107,7 +115,7 @@ def join_room(this_client, data):
     for room in room_list:
         print("Name: ", room.name, "\nClients: ", room.clients, "\n")
 
-# takes in client and rooms client wants to leave. If the client isn't in the room does nothing
+# takes in client and the rooms it wants to leave. If the client isn't in the room does nothing
 def leave_room(this_client, data):
     selected_rooms = data['Rooms']
     # Strip duplicate entries by mapping to a dictionary then back to a list
@@ -132,13 +140,13 @@ def list_rooms(this_client, data):
     if rooms:
         try:
             send_message(this_client, "", "", "notify", "List of rooms:\n" + rooms)
-        except exception as e:
+        except Exception as e:
             print(e)
             #disconnect_client(this_client)
     else:
         try:
             send_message(this_client, "", "", "notify", "No Rooms Found!")
-        except exception as e:
+        except Exception as e:
             print(e)
             #disconnect_client(this_client)
 
@@ -182,7 +190,7 @@ def message_room(this_client, data):
                 if client != this_client:
                     try:
                         send_message(client, room.name, this_client.username, "room_msg", message)
-                    except exception as e:
+                    except Exception as e:
                         print(e)
                         #disconnect_client(this_client)
 
@@ -238,9 +246,9 @@ def new_client_connect(this_client, data):
         # if the first time sending a message we need to register using current data
         try:
             data = this_client.socket.recv(1024)
-        except exception as e:
+        except Exception as e:
             print(e)
-            #disconnect_client(this_client)
+            disconnect_client(this_client)
             return
 
         #check if the data works and also if the user has successfully sent a username
@@ -280,7 +288,8 @@ def new_client_connect(this_client, data):
             # list rooms in given room
             elif (data['cmd'] == "List Users"):
                 list_users(this_client, data)
-
+            print("operation finished")
+            send_message(this_client, "", "", "notify", this_client.username + " >>")
         else:
             disconnect_client(this_client)
             # print("Client ", address ," has disconnected")
@@ -292,10 +301,7 @@ def new_client_connect(this_client, data):
         #clientSock.send(data)
     clientSock.close()
 
-client_list = []
-room_list = []
-room_names = []
-
+# Main
 if __name__ == '__main__':
 
     serverSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

@@ -37,7 +37,9 @@ registered = False
 # Function run on separate thread to receive messages from server
 def get_messages(clientSock):
     global registered
+
     while 1:
+        message = ""
         #print("get message")
         from_server = clientSock.recv(4096)
         from_server = from_server.decode("utf-8")
@@ -47,7 +49,8 @@ def get_messages(clientSock):
             registered = True
 
         # print(registered)
-        message = from_server["room"] + from_server['time'] + from_server["user"] + ">>"
+        if from_server["type"] != "notify":
+            message = from_server["room"] + from_server['time'] + from_server["user"] + ">>"
         message = message + from_server["msg"]
         print(message)
 
@@ -65,7 +68,7 @@ if __name__ == '__main__':
         print(registered)
         uname = input(str("Input username: "))
         data = {'cmd' : 'Register',  'msg': uname, 'Rooms':None}
-        print(registered)
+        # print(registered)
         try:
             #clientSock.setblocking(0)
             clientSock.send(str(data).encode("utf-8"))
@@ -86,8 +89,8 @@ if __name__ == '__main__':
               "\n5)Leave Room(s)"
               "\n6)PM User: Sends a message to a single user/usergroup"
               "\n7)Quit\n")
-        time.sleep(0.5)
-        cmd = input(uname +" > ")
+        #time.sleep(0.5)
+        cmd = input()
         if cmd == "1":
             #join(clientSock, data)
             data['cmd'] = "Join"
